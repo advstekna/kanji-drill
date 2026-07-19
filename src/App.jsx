@@ -1,120 +1,90 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-
-const KANJI_POOL = [
-  { kanji: "悲", meaning: "sad", readings: ["かなしい", "ひ"], level: "N3",
-    vocab: [{ word: "悲しみ", reading: "かなしみ", meaning: "sadness" }, { word: "悲劇", reading: "ひげき", meaning: "tragedy" }] },
-  { kanji: "笑", meaning: "laugh", readings: ["わらう", "しょう"], level: "N3",
-    vocab: [{ word: "笑顔", reading: "えがお", meaning: "smiling face" }, { word: "笑い声", reading: "わらいごえ", meaning: "laughter" }] },
-  { kanji: "怒", meaning: "angry", readings: ["おこる", "ど"], level: "N3",
-    vocab: [{ word: "怒り", reading: "いかり", meaning: "anger" }, { word: "激怒", reading: "げきど", meaning: "rage" }] },
-  { kanji: "困", meaning: "troubled", readings: ["こまる", "こん"], level: "N3",
-    vocab: [{ word: "困難", reading: "こんなん", meaning: "difficulty" }, { word: "困惑", reading: "こんわく", meaning: "bewilderment" }] },
-  { kanji: "覚", meaning: "awaken", readings: ["おぼえる", "かく"], level: "N3",
-    vocab: [{ word: "覚悟", reading: "かくご", meaning: "resolve/readiness" }, { word: "記憶", reading: "きおく", meaning: "memory" }] },
-  { kanji: "忘", meaning: "forget", readings: ["わすれる", "ぼう"], level: "N3",
-    vocab: [{ word: "忘れ物", reading: "わすれもの", meaning: "forgotten item" }, { word: "忘却", reading: "ぼうきゃく", meaning: "oblivion" }] },
-  { kanji: "願", meaning: "wish", readings: ["ねがう", "がん"], level: "N3",
-    vocab: [{ word: "願い", reading: "ねがい", meaning: "wish/hope" }, { word: "願望", reading: "がんぼう", meaning: "desire" }] },
-  { kanji: "恐", meaning: "fear", readings: ["おそれる", "きょう"], level: "N3",
-    vocab: [{ word: "恐怖", reading: "きょうふ", meaning: "terror" }, { word: "恐ろしい", reading: "おそろしい", meaning: "horrifying" }] },
-  { kanji: "謝", meaning: "apologize", readings: ["あやまる", "しゃ"], level: "N3",
-    vocab: [{ word: "謝罪", reading: "しゃざい", meaning: "apology" }, { word: "感謝", reading: "かんしゃ", meaning: "gratitude" }] },
-  { kanji: "夢", meaning: "dream", readings: ["ゆめ", "む"], level: "N3",
-    vocab: [{ word: "夢中", reading: "むちゅう", meaning: "absorbed/engrossed" }, { word: "悪夢", reading: "あくむ", meaning: "nightmare" }] },
-  { kanji: "命", meaning: "life/fate", readings: ["いのち", "めい"], level: "N3",
-    vocab: [{ word: "命令", reading: "めいれい", meaning: "command/order" }, { word: "運命", reading: "うんめい", meaning: "destiny" }] },
-  { kanji: "心", meaning: "heart", readings: ["こころ", "しん"], level: "N3",
-    vocab: [{ word: "心配", reading: "しんぱい", meaning: "worry/concern" }, { word: "安心", reading: "あんしん", meaning: "relief" }] },
-  { kanji: "抱", meaning: "embrace", readings: ["だく", "ほう"], level: "N3",
-    vocab: [{ word: "抱擁", reading: "ほうよう", meaning: "embrace/hug" }, { word: "抱負", reading: "ほうふ", meaning: "ambition" }] },
-  { kanji: "眠", meaning: "sleep", readings: ["ねむる", "みん"], level: "N3",
-    vocab: [{ word: "眠気", reading: "ねむけ", meaning: "sleepiness" }, { word: "安眠", reading: "あんみん", meaning: "peaceful sleep" }] },
-  { kanji: "驚", meaning: "surprised", readings: ["おどろく", "きょう"], level: "N2",
-    vocab: [{ word: "驚き", reading: "おどろき", meaning: "surprise/amazement" }, { word: "驚愕", reading: "きょうがく", meaning: "astonishment" }] },
-  { kanji: "疑", meaning: "doubt", readings: ["うたがう", "ぎ"], level: "N2",
-    vocab: [{ word: "疑問", reading: "ぎもん", meaning: "question/doubt" }, { word: "疑惑", reading: "ぎわく", meaning: "suspicion" }] },
-  { kanji: "憧", meaning: "longing", readings: ["あこがれる", "どう"], level: "N2",
-    vocab: [{ word: "憧れ", reading: "あこがれ", meaning: "longing/admiration" }] },
-  { kanji: "誇", meaning: "pride", readings: ["ほこる", "こ"], level: "N2",
-    vocab: [{ word: "誇り", reading: "ほこり", meaning: "pride" }, { word: "誇示", reading: "こじ", meaning: "show off" }] },
-  { kanji: "嘘", meaning: "lie", readings: ["うそ"], level: "N2",
-    vocab: [{ word: "嘘つき", reading: "うそつき", meaning: "liar" }, { word: "方便の嘘", reading: "ほうべんのうそ", meaning: "white lie" }] },
-  { kanji: "魂", meaning: "soul", readings: ["たましい", "こん"], level: "N2",
-    vocab: [{ word: "魂胆", reading: "こんたん", meaning: "ulterior motive" }, { word: "霊魂", reading: "れいこん", meaning: "spirit/soul" }] },
-  { kanji: "縁", meaning: "fate/bond", readings: ["えん"], level: "N2",
-    vocab: [{ word: "縁起", reading: "えんぎ", meaning: "omen/luck" }, { word: "縁談", reading: "えんだん", meaning: "marriage proposal" }] },
-  { kanji: "歓", meaning: "joy", readings: ["かん"], level: "N2",
-    vocab: [{ word: "歓迎", reading: "かんげい", meaning: "welcome" }, { word: "歓声", reading: "かんせい", meaning: "cheer/shout of joy" }] },
-  { kanji: "憂", meaning: "melancholy", readings: ["うれえる", "ゆう"], level: "N2",
-    vocab: [{ word: "憂鬱", reading: "ゆううつ", meaning: "depression/gloom" }, { word: "憂慮", reading: "ゆうりょ", meaning: "anxiety/concern" }] },
-  { kanji: "哀", meaning: "sorrow", readings: ["あわれ", "あい"], level: "N2",
-    vocab: [{ word: "哀しみ", reading: "かなしみ", meaning: "grief" }, { word: "哀愁", reading: "あいしゅう", meaning: "pathos/sadness" }] },
-  { kanji: "慕", meaning: "yearn", readings: ["したう", "ぼ"], level: "N2",
-    vocab: [{ word: "慕情", reading: "ぼじょう", meaning: "longing/yearning" }, { word: "思慕", reading: "しぼ", meaning: "yearning/love" }] },
-  { kanji: "揺", meaning: "sway", readings: ["ゆれる", "よう"], level: "N2",
-    vocab: [{ word: "揺れ", reading: "ゆれ", meaning: "shaking/swaying" }, { word: "動揺", reading: "どうよう", meaning: "agitation/upset" }] },
-  { kanji: "輝", meaning: "shine", readings: ["かがやく", "き"], level: "N2",
-    vocab: [{ word: "輝き", reading: "かがやき", meaning: "radiance/brilliance" }, { word: "光輝", reading: "こうき", meaning: "glory/splendor" }] },
-  { kanji: "孤", meaning: "lone", readings: ["こ"], level: "N2",
-    vocab: [{ word: "孤独", reading: "こどく", meaning: "loneliness/isolation" }, { word: "孤立", reading: "こりつ", meaning: "isolation" }] },
-  { kanji: "渇", meaning: "thirst", readings: ["かわく", "かつ"], level: "N2",
-    vocab: [{ word: "渇望", reading: "かつぼう", meaning: "craving/longing" }, { word: "渇き", reading: "かわき", meaning: "thirst" }] },
-  { kanji: "焦", meaning: "impatient", readings: ["あせる", "しょう"], level: "N2",
-    vocab: [{ word: "焦り", reading: "あせり", meaning: "impatience/anxiety" }, { word: "焦点", reading: "しょうてん", meaning: "focus/focal point" }] },
-];
-
-const ALL_VOCAB = KANJI_POOL.flatMap(k => k.vocab || []);
+import { fetchSessionCards, recordReview } from "./db";
 
 const TIMER_SECONDS = 10;
 const MAX_LIVES = 3;
 const CHOICES = 4;
 const FAST_WINDOW = 3000;
 
+
 function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
 function getLevelColor(level) { return level === "N3" ? "#16a34a" : "#b45309"; }
 
-function makeQuestion(card, pool, difficultyMode) {
-  const roll = Math.random();
-  const hasVocab = card.vocab && card.vocab.length > 0;
-  let qType;
-  if (hasVocab && roll < 0.2) qType = "vocab-reading";
-  else if (hasVocab && roll < 0.4) qType = "vocab-meaning";
-  else if (roll < 0.7) qType = "kanji-meaning";
-  else qType = "kanji-reading";
+// ── Build a question from a card ─────────────────────────────────────────
+// card.type === 'kanji' or 'vocab'
+// difficultyMode: 'easy' | 'hard'
+function makeQuestion(card, allCards, difficultyMode) {
+  // Decide question type based on card type
+  const isVocabCard = card.type === 'vocab'
+  let qType
 
-  let prompt, correctAnswer, choices, hint;
-
-  if (qType === "kanji-meaning") {
-    prompt = card.kanji;
-    correctAnswer = card.meaning;
-    const wrongs = shuffle(pool.filter(k => k.meaning !== card.meaning)).slice(0, CHOICES - 1).map(k => k.meaning);
-    choices = shuffle([correctAnswer, ...wrongs]);
-    hint = card.readings[0];
-  } else if (qType === "kanji-reading") {
-    prompt = card.kanji;
-    correctAnswer = card.readings[0];
-    const wrongs = shuffle(pool.filter(k => k.readings[0] !== correctAnswer).map(k => k.readings[0])).slice(0, CHOICES - 1);
-    choices = shuffle([correctAnswer, ...wrongs]);
-    hint = card.meaning;
-  } else if (qType === "vocab-reading") {
-    const vocab = shuffle(card.vocab)[0];
-    prompt = vocab.word;
-    correctAnswer = vocab.reading;
-    const wrongs = shuffle(ALL_VOCAB.filter(v => v.reading !== vocab.reading).map(v => v.reading)).slice(0, CHOICES - 1);
-    choices = shuffle([correctAnswer, ...wrongs]);
-    hint = vocab.meaning;
+  if (isVocabCard) {
+    qType = Math.random() < 0.5 ? 'vocab-reading' : 'vocab-meaning'
   } else {
-    const vocab = shuffle(card.vocab)[0];
-    prompt = vocab.word;
-    correctAnswer = vocab.meaning;
-    const wrongs = shuffle(ALL_VOCAB.filter(v => v.meaning !== vocab.meaning).map(v => v.meaning)).slice(0, CHOICES - 1);
-    choices = shuffle([correctAnswer, ...wrongs]);
-    hint = vocab.reading;
+    const roll = Math.random()
+    // If card has vocab, mix in vocab questions
+    const hasVocab = card.vocab && card.vocab.length > 0
+    if (hasVocab && roll < 0.2) qType = 'vocab-reading'
+    else if (hasVocab && roll < 0.4) qType = 'vocab-meaning'
+    else if (roll < 0.7) qType = 'kanji-meaning'
+    else qType = 'kanji-reading'
   }
 
-  return { qType, prompt, correctAnswer, choices, hint, difficultyMode, isRetry: false };
+  // Pool for wrong answers — all cards in the session
+  const kanjiPool = allCards.filter(c => c.type === 'kanji')
+  const vocabPool = allCards.filter(c => c.type === 'vocab' || (c.vocab && c.vocab.length > 0))
+  const allVocab = allCards.flatMap(c => c.vocab || [])
+
+  let prompt, correctAnswer, choices, hint
+
+  if (qType === 'kanji-meaning') {
+    prompt = card.kanji
+    correctAnswer = card.meaning
+    const wrongs = shuffle(kanjiPool.filter(c => c.meaning !== card.meaning))
+      .slice(0, CHOICES - 1).map(c => c.meaning)
+    choices = shuffle([correctAnswer, ...wrongs])
+    hint = card.readings?.[0] || card.kun_readings?.[0] || card.on_readings?.[0] || ''
+
+  } else if (qType === 'kanji-reading') {
+    prompt = card.kanji
+    const reading = card.kun_readings?.[0] || card.on_readings?.[0] || card.readings?.[0] || ''
+    correctAnswer = reading
+    const wrongs = shuffle(
+      kanjiPool
+        .map(c => c.kun_readings?.[0] || c.on_readings?.[0] || '')
+        .filter(r => r && r !== correctAnswer)
+    ).slice(0, CHOICES - 1)
+    choices = shuffle([correctAnswer, ...wrongs])
+    hint = card.meaning
+
+  } else if (qType === 'vocab-reading') {
+    // Pick vocab — from card.vocab if kanji card, or card itself if vocab card
+    const vocabItem = isVocabCard
+      ? card
+      : shuffle(card.vocab)[0]
+    prompt = vocabItem.word
+    correctAnswer = vocabItem.reading
+    const wrongs = shuffle(allVocab.filter(v => v.reading !== correctAnswer))
+      .slice(0, CHOICES - 1).map(v => v.reading)
+    choices = shuffle([correctAnswer, ...wrongs])
+    hint = vocabItem.meaning
+
+  } else { // vocab-meaning
+    const vocabItem = isVocabCard
+      ? card
+      : shuffle(card.vocab)[0]
+    prompt = vocabItem.word
+    correctAnswer = vocabItem.meaning
+    const wrongs = shuffle(allVocab.filter(v => v.meaning !== correctAnswer))
+      .slice(0, CHOICES - 1).map(v => v.meaning)
+    choices = shuffle([correctAnswer, ...wrongs])
+    hint = vocabItem.reading
+  }
+
+  return { qType, prompt, correctAnswer, choices, hint, difficultyMode, isRetry: false }
 }
 
+// ── Hearts component ──────────────────────────────────────────────────────
 function Hearts({ halfHearts }) {
   return (
     <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -140,11 +110,13 @@ const DRILL_MODES = [
   { key: "hard",  label: "Hard",  jp: "むずかしい", desc: "No hints — every card earns 2× points",         icon: "🔥", accent: "#dc2626", bg: "#fff1f2", border: "#fecdd3" },
 ];
 
-export default function App() {
-  const [phase, setPhase] = useState("menu");
+export default function App({ session }) {
+  const userId = session.user.id
+
+  const [phase, setPhase] = useState("menu"); // menu | loading | playing | result
   const [drillMode, setDrillMode] = useState(null);
-  const [deck, setDeck] = useState([]);
-  const [questions, setQuestions] = useState([]);
+  const [deck, setDeck] = useState([]);        // raw card objects from DB
+  const [questions, setQuestions] = useState([]); // question objects
   const [index, setIndex] = useState(0);
   const [halfHearts, setHalfHearts] = useState(MAX_LIVES * 2);
   const [score, setScore] = useState(0);
@@ -157,52 +129,107 @@ export default function App() {
   const [results, setResults] = useState([]);
   const [cardStartTime, setCardStartTime] = useState(null);
   const [isRetry, setIsRetry] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const timerRef = useRef(null);
   const fallRef = useRef(null);
   const halfHeartsRef = useRef(MAX_LIVES * 2);
+  const [selectedLevels, setSelectedLevels] = useState(['N3', 'N2'])
 
-  const startGame = useCallback((mode) => {
-    const d = shuffle(KANJI_POOL);
-    const qs = d.map(card => {
-      const diff = mode === "easy" ? "easy" : mode === "hard" ? "hard" : Math.random() < 0.5 ? "hard" : "easy";
-      return makeQuestion(card, KANJI_POOL, diff);
-    });
-    halfHeartsRef.current = MAX_LIVES * 2;
-    setDeck(d); setQuestions(qs); setIndex(0);
-    setHalfHearts(MAX_LIVES * 2); setScore(0); setStreak(0); setMultiplier(1);
-    setResults([]); setIsRetry(false); setDrillMode(mode); setPhase("playing");
-  }, []);
+  function toggleLevel(level) {
+    setSelectedLevels(prev => {
+      if (prev.includes(level)) {
+        if (prev.length === 1) return prev
+        return prev.filter(l => l !== level)
+      }
+      return [...prev, level]
+    })
+  }
+  const startGame = useCallback(async (mode) => {
+    setPhase("loading");
+    setLoadError(null);
+    setDrillMode(mode);
+
+    try {
+      const cards = await fetchSessionCards(userId, selectedLevels);
+      if (!cards || cards.length === 0) {
+        setLoadError("No cards found. Please check your database.");
+        setPhase("menu");
+        return;
+      }
+
+      const qs = cards.map(card => {
+        const diff = mode === "easy" ? "easy" : mode === "hard" ? "hard" : Math.random() < 0.5 ? "hard" : "easy";
+        return makeQuestion(card, cards, diff);
+      });
+
+      halfHeartsRef.current = MAX_LIVES * 2;
+      setDeck(cards);
+      setQuestions(qs);
+      setIndex(0);
+      setHalfHearts(MAX_LIVES * 2);
+      setScore(0);
+      setStreak(0);
+      setMultiplier(1);
+      setResults([]);
+      setIsRetry(false);
+      setPhase("playing");
+    } catch (err) {
+      console.error(err);
+      setLoadError("Failed to load cards. Please try again.");
+      setPhase("menu");
+    }
+  }, [userId]);
 
   const currentCard = deck[index];
   const currentQ = questions[index];
 
+  // Reset state per card
   useEffect(() => {
     if (phase !== "playing" || !currentQ) return;
-    setTimeLeft(TIMER_SECONDS); setFallProgress(0);
-    setFeedback(null); setAnswered(false); setCardStartTime(Date.now());
+    setTimeLeft(TIMER_SECONDS);
+    setFallProgress(0);
+    setFeedback(null);
+    setAnswered(false);
+    setCardStartTime(Date.now());
   }, [index, phase, currentQ]);
 
+  // Timer
   useEffect(() => {
     if (phase !== "playing" || answered || !currentQ) return;
     timerRef.current = setInterval(() => {
-      setTimeLeft(t => { if (t <= 0.05) { clearInterval(timerRef.current); handleTimeout(); return 0; } return t - 0.05; });
+      setTimeLeft(t => {
+        if (t <= 0.05) { clearInterval(timerRef.current); handleTimeout(); return 0; }
+        return t - 0.05;
+      });
     }, 50);
     return () => clearInterval(timerRef.current);
   }, [index, phase, answered]);
 
+  // Fall animation
   useEffect(() => {
     if (phase !== "playing" || answered || !currentQ) return;
     const start = Date.now();
-    fallRef.current = setInterval(() => setFallProgress(Math.min((Date.now() - start) / (TIMER_SECONDS * 1000), 1)), 30);
+    fallRef.current = setInterval(() => {
+      setFallProgress(Math.min((Date.now() - start) / (TIMER_SECONDS * 1000), 1));
+    }, 30);
     return () => clearInterval(fallRef.current);
   }, [index, phase, answered]);
 
-  function loseHalfHeart() { const n = halfHeartsRef.current - 1; halfHeartsRef.current = n; setHalfHearts(n); return n; }
-  function gainHalfHeart() { const n = Math.min(halfHeartsRef.current + 1, MAX_LIVES * 2); halfHeartsRef.current = n; setHalfHearts(n); }
+  function loseHalfHeart() {
+    const n = halfHeartsRef.current - 1;
+    halfHeartsRef.current = n;
+    setHalfHearts(n);
+    return n;
+  }
+  function gainHalfHeart() {
+    const n = Math.min(halfHeartsRef.current + 1, MAX_LIVES * 2);
+    halfHeartsRef.current = n;
+    setHalfHearts(n);
+  }
 
   function injectRetry(card, origQ) {
     const insertAt = Math.min(index + 1 + Math.floor(Math.random() * 2) + 1, deck.length);
-    const retryQ = { ...makeQuestion(card, KANJI_POOL, origQ.difficultyMode), isRetry: true };
+    const retryQ = { ...makeQuestion(card, deck, origQ.difficultyMode), isRetry: true };
     setDeck(prev => { const n = [...prev]; n.splice(insertAt, 0, card); return n; });
     setQuestions(prev => { const n = [...prev]; n.splice(insertAt, 0, retryQ); return n; });
   }
@@ -214,29 +241,49 @@ export default function App() {
   }
 
   function handleTimeout() {
-    clearInterval(timerRef.current); clearInterval(fallRef.current);
-    setAnswered(true); setFeedback("wrong");
-    const remaining = loseHalfHeart(); setStreak(0); setMultiplier(1);
+    clearInterval(timerRef.current);
+    clearInterval(fallRef.current);
+    setAnswered(true);
+    setFeedback("wrong");
+    const remaining = loseHalfHeart();
+    setStreak(0);
+    setMultiplier(1);
     if (!isRetry) injectRetry(currentCard, currentQ);
+    // Record review — timeout counts as wrong
+    recordReview(userId, currentCard, false, TIMER_SECONDS * 1000, drillMode, currentQ.qType);
     setResults(r => [...r, { card: currentCard, q: currentQ, correct: false, timeout: true, retry: isRetry }]);
     setTimeout(() => advance(remaining), 1000);
   }
 
   function handleChoice(choice) {
     if (answered) return;
-    clearInterval(timerRef.current); clearInterval(fallRef.current);
+    clearInterval(timerRef.current);
+    clearInterval(fallRef.current);
     setAnswered(true);
+
     const elapsed = Date.now() - cardStartTime;
     const isCorrect = choice === currentQ.correctAnswer;
     const isFast = elapsed < FAST_WINDOW;
+
+    // Record review in DB (fire and forget — don't block UI)
+    if (!isRetry) {
+      recordReview(userId, currentCard, isCorrect, elapsed, drillMode, currentQ.qType);
+    }
+
     if (isCorrect) {
       const { points, newMult } = calcPoints(isFast, currentQ.difficultyMode);
-      setStreak(s => s + 1); setMultiplier(newMult); setScore(s => s + points);
-      if (isRetry) { gainHalfHeart(); setFeedback("recover"); } else setFeedback("correct");
+      setStreak(s => s + 1);
+      setMultiplier(newMult);
+      setScore(s => s + points);
+      if (isRetry) { gainHalfHeart(); setFeedback("recover"); }
+      else setFeedback("correct");
       setResults(r => [...r, { card: currentCard, q: currentQ, correct: true, fast: isFast, points, retry: isRetry }]);
       setTimeout(() => advance(halfHeartsRef.current), 650);
     } else {
-      const remaining = loseHalfHeart(); setStreak(0); setMultiplier(1); setFeedback("wrong");
+      const remaining = loseHalfHeart();
+      setStreak(0);
+      setMultiplier(1);
+      setFeedback("wrong");
       if (!isRetry) injectRetry(currentCard, currentQ);
       setResults(r => [...r, { card: currentCard, q: currentQ, correct: false, retry: isRetry }]);
       setTimeout(() => advance(remaining), 1000);
@@ -250,9 +297,24 @@ export default function App() {
     setIndex(i => i + 1);
   }
 
+  async function handleSignOut() {
+    const { supabase } = await import('./supabase')
+    await supabase.auth.signOut()
+  }
+
   const cardY = Math.round(fallProgress * 60);
   const timerPct = (timeLeft / TIMER_SECONDS) * 100;
   const timerColor = timerPct > 60 ? "#16a34a" : timerPct > 30 ? "#d97706" : "#dc2626";
+
+  // ── LOADING ───────────────────────────────────────────
+  if (phase === "loading") {
+    return (
+      <div style={{ ...s.shell, gap: 16 }}>
+        <div style={{ fontSize: 48, fontFamily: "serif" }}>漢字</div>
+        <div style={{ color: "#888", fontSize: 14 }}>Loading cards...</div>
+      </div>
+    );
+  }
 
   // ── MENU ──────────────────────────────────────────────
   if (phase === "menu") {
@@ -261,7 +323,33 @@ export default function App() {
         <div style={s.menuWrap}>
           <div style={s.menuKanji}>漢字</div>
           <h1 style={s.menuTitle}>Speed Drill</h1>
-          <p style={s.menuSub}>N3 · N2 — kanji &amp; vocabulary</p>
+          <p style={s.menuSub}>kanji &amp; vocabulary</p>
+
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 20 }}>
+            {['N3', 'N2'].map(level => {
+              const active = selectedLevels.includes(level)
+              const color = level === 'N3' ? '#16a34a' : '#b45309'
+              return (
+                <button
+                  key={level}
+                  onClick={() => toggleLevel(level)}
+                  style={{
+                    padding: '6px 20px', borderRadius: 20, border: '1.5px solid',
+                    fontWeight: 700, fontSize: 14, cursor: 'pointer',
+                    background: active ? color : '#fff',
+                    borderColor: color,
+                    color: active ? '#fff' : color,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {level}
+                </button>
+              )
+            })}
+          </div>
+
+          {loadError && <div style={s.errorBox}>{loadError}</div>}
+
           <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
             {DRILL_MODES.map(m => (
               <button key={m.key} onClick={() => startGame(m.key)}
@@ -279,12 +367,15 @@ export default function App() {
               </button>
             ))}
           </div>
+
           <div style={s.pillRow}>
             <span style={s.pill}>⏱ 10 sec</span>
             <span style={s.pill}>❤️ 3 lives</span>
             <span style={s.pill}>🔁 Wrong = retry</span>
             <span style={s.pill}>📖 Vocab included</span>
           </div>
+
+          <button onClick={handleSignOut} style={s.signOutBtn}>Sign out</button>
         </div>
       </div>
     );
@@ -341,7 +432,7 @@ export default function App() {
             })}
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            <button style={{ ...s.startBtn, flex: 1, background: "#f3f4f6", color: "#333" }} onClick={() => setPhase("menu")}>← Modes</button>
+            <button style={{ ...s.startBtn, flex: 1, background: "#f3f4f6", color: "#333" }} onClick={() => setPhase("menu")}>← Menu</button>
             <button style={{ ...s.startBtn, flex: 2 }} onClick={() => startGame(drillMode)}>Again →</button>
           </div>
         </div>
@@ -357,8 +448,12 @@ export default function App() {
   const qLabel = isReadingQ ? "読み — Reading" : "意味 — Meaning";
   const qLabelColor = isReadingQ ? "#7c3aed" : "#4f46e5";
 
-  const cardBorder = feedback === "correct" || feedback === "recover" ? "#16a34a55" : feedback === "wrong" ? "#dc262655" : isHard ? "#fecdd3" : "#e5e7eb";
-  const cardShadow = feedback === "correct" || feedback === "recover" ? "0 0 32px #16a34a22" : feedback === "wrong" ? "0 0 32px #dc262622" : "0 2px 16px #0000000f";
+  const cardBorder = feedback === "correct" || feedback === "recover" ? "#16a34a55"
+    : feedback === "wrong" ? "#dc262655"
+    : isHard ? "#fecdd3" : "#e5e7eb";
+  const cardShadow = feedback === "correct" || feedback === "recover" ? "0 0 32px #16a34a22"
+    : feedback === "wrong" ? "0 0 32px #dc262622"
+    : "0 2px 16px #0000000f";
 
   // ── PLAYING ───────────────────────────────────────────
   return (
@@ -423,10 +518,12 @@ const s = {
   menuKanji: { fontSize: 64, fontFamily: "serif", lineHeight: 1, background: "linear-gradient(135deg, #7c3aed, #4f46e5)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 6 },
   menuTitle: { fontSize: 26, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 4px", color: "#111" },
   menuSub: { color: "#888", fontSize: 13, marginBottom: 20 },
+  errorBox: { background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#dc2626", marginBottom: 16 },
   modeCard: { display: "flex", alignItems: "center", justifyContent: "space-between", border: "1.5px solid", borderRadius: 14, padding: "14px 16px", cursor: "pointer", width: "100%", boxSizing: "border-box" },
   pillRow: { display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", marginTop: 20 },
   pill: { background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#666" },
   startBtn: { background: "linear-gradient(135deg, #7c3aed, #4f46e5)", color: "#fff", border: "none", borderRadius: 12, padding: "14px 24px", fontSize: 15, fontWeight: 600, cursor: "pointer" },
+  signOutBtn: { marginTop: 24, background: "none", border: "none", color: "#bbb", fontSize: 12, cursor: "pointer", textDecoration: "underline" },
   hud: { width: "100%", maxWidth: 400, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   hudScore: { fontSize: 20, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#111" },
   multBadge: { background: "#7c3aed", borderRadius: 8, color: "#fff", padding: "2px 8px", fontSize: 12, fontWeight: 700 },
