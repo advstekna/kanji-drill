@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+scripts/kanjidic2.xml
+scripts/JMdict_e.xml
+scripts/JMdict_e.xml.gz
