@@ -9,11 +9,8 @@ export default function Auth() {
     setLoading(true)
     setError(null)
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-      redirectTo: 'https://kanji-drill-nu.vercel.app'
-    }
-    })
+  provider: 'google'
+})
     if (error) setError(error.message)
     setLoading(false)
   }

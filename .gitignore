@@ -25,3 +25,5 @@ dist-ssr
 scripts/kanjidic2.xml
 scripts/JMdict_e.xml
 scripts/JMdict_e.xml.gz
+.vercel
+.env*
