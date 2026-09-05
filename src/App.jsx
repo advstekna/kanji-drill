@@ -477,7 +477,13 @@ export default function App({ session }) {
 
       <div style={{ ...s.cardWrap, transform: `translateY(${cardY}px)`, opacity: feedback === "wrong" ? 0.5 : 1 }}>
         <div style={{ ...s.card, borderColor: cardBorder, boxShadow: cardShadow, background: isHard ? "#fffafa" : "#fff" }}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginBottom: 6 }}>
           <div style={{ ...s.levelBadge, color: getLevelColor(currentCard.level) }}>{currentCard.level}</div>
+          {currentCard.progress
+            ? <div style={{ fontSize: 10, fontWeight: 700, color: '#0891b2', background: '#e0f2fe', borderRadius: 20, padding: '2px 8px', letterSpacing: '0.06em' }}>SEEN</div>
+            : <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', background: '#f3f4f6', borderRadius: 20, padding: '2px 8px', letterSpacing: '0.06em' }}>NEW</div>
+          }
+        </div>
           <div style={{ ...s.kanjiGlyph, fontSize: isVocabQ ? 32 : 84 }}>{currentQ.prompt}</div>
           {isHard && !answered
             ? <div style={{ ...s.hint, color: "#ddd", letterSpacing: "0.2em" }}>• • •</div>
