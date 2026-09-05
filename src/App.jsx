@@ -252,7 +252,7 @@ export default function App({ session }) {
     // Record review — timeout counts as wrong
     recordReview(userId, currentCard, false, TIMER_SECONDS * 1000, drillMode, currentQ.qType);
     setResults(r => [...r, { card: currentCard, q: currentQ, correct: false, timeout: true, retry: isRetry }]);
-    setTimeout(() => advance(remaining), 1000);
+    setTimeout(() => advance(remaining), 1500);
   }
 
   function handleChoice(choice) {
@@ -278,7 +278,7 @@ export default function App({ session }) {
       if (isRetry) { gainHalfHeart(); setFeedback("recover"); }
       else setFeedback("correct");
       setResults(r => [...r, { card: currentCard, q: currentQ, correct: true, fast: isFast, points, retry: isRetry }]);
-      setTimeout(() => advance(halfHeartsRef.current), 650);
+      setTimeout(() => advance(halfHeartsRef.current), 1200);
     } else {
       const remaining = loseHalfHeart();
       setStreak(0);
@@ -286,7 +286,7 @@ export default function App({ session }) {
       setFeedback("wrong");
       if (!isRetry) injectRetry(currentCard, currentQ);
       setResults(r => [...r, { card: currentCard, q: currentQ, correct: false, retry: isRetry }]);
-      setTimeout(() => advance(remaining), 1000);
+      setTimeout(() => advance(remaining), 1500);
     }
   }
 
