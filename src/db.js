@@ -30,27 +30,23 @@ function sm2(easeFactor, intervalDays, quality) {
 export async function fetchSessionCards(userId, levels = ['N3', 'N2']) {
   const now = new Date().toISOString()
 
-  // Step 1: Get due cards from card_progress
-  let dueQuery = supabase
+  // Step 1: Get due cards
+  const { data: dueCards, error: dueError } = await supabase
     .from('card_progress')
-    .select('card_id, card_type, ease_factor, interval_days, total_correct, total_reviews')
+    .select('card_id, card_type, level, ease_factor, interval_days, total_correct, total_reviews')
     .eq('user_id', userId)
+    .in('level', levels)
     .lte('next_review', now)
-    .order('ease_factor', { ascending: true }) // weakest first
+    .order('ease_factor', { ascending: true })
     .limit(SESSION_SIZE)
 
-  if (levels?.length) dueQuery = dueQuery.in('level', levels)
-
-
-  const { data: dueCards, error: dueError } = await dueQuery
   if (dueError) { console.error('Error fetching due cards:', dueError); return [] }
 
-  // Step 2: If not enough due cards, fill with unseen kanji
+  // Step 2: Fill remaining slots with unseen kanji
   const needed = SESSION_SIZE - (dueCards?.length || 0)
   let unseenKanji = []
 
   if (needed > 0) {
-    // Get IDs of kanji already seen
     const { data: seenProgress } = await supabase
       .from('card_progress')
       .select('card_id')
@@ -62,24 +58,24 @@ export async function fetchSessionCards(userId, levels = ['N3', 'N2']) {
     let kanjiQuery = supabase
       .from('kanji')
       .select('id, character, meaning, level, kun_readings, on_readings')
-      .limit(needed * 2) // fetch extra so we can filter
+      .in('level', levels)
+      .limit(needed * 2)
 
-    if (levels?.length) kanjiQuery = kanjiQuery.in('level', levels)
     if (seenIds.length > 0) kanjiQuery = kanjiQuery.not('id', 'in', `(${seenIds.join(',')})`)
 
     const { data: kanjiData } = await kanjiQuery
     unseenKanji = (kanjiData || []).slice(0, needed)
   }
 
-  // Step 3: Hydrate due cards with full kanji/vocab data
+  // Step 3: Hydrate due cards
   const hydratedDue = await hydrateDueCards(dueCards || [])
 
-  // Step 4: Format unseen kanji into the same shape
+  // Step 4: Format unseen
   const formattedUnseen = await formatUnseenKanji(unseenKanji)
 
-  // Combine and shuffle
-  const allCards = shuffle([...hydratedDue, ...formattedUnseen])
-  return allCards.slice(0, SESSION_SIZE)
+  console.log(`Due: ${hydratedDue.length}, New: ${formattedUnseen.length}`)
+
+  return shuffle([...hydratedDue, ...formattedUnseen]).slice(0, SESSION_SIZE)
 }
 
 // Fetch full data for cards that have progress rows
