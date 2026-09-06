@@ -256,3 +256,22 @@ export async function fetchProgressSummary(userId) {
 }
 
 function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5) }
+
+// Fetch a pool of distractors from the full DB for wrong answers
+export async function fetchDistractorPool(levels = ['N3', 'N2']) {
+  const [kanjiRes, vocabRes] = await Promise.all([
+    supabase
+      .from('kanji')
+      .select('id, meaning, kun_readings, on_readings')
+      .in('level', levels)
+      .limit(200),
+    supabase
+      .from('vocab')
+      .select('id, word, reading, meaning')
+      .limit(300),
+  ])
+  return {
+    kanji: kanjiRes.data || [],
+    vocab: vocabRes.data || [],
+  }
+}

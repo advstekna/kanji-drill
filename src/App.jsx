@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { fetchSessionCards, recordReview } from "./db";
+import { fetchSessionCards, recordReview, fetchDistractorPool } from "./db";
 
 const TIMER_SECONDS = 10;
 const MAX_LIVES = 3;
@@ -10,7 +10,7 @@ function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
 function getLevelColor(level) { return level === "N3" ? "#16a34a" : "#b45309"; }
 function cleanReading(r) { return r ? r.replace(/\./g, '').replace(/-/g, '') : '' }
 
-function makeQuestion(card, allCards, difficultyMode) {
+function makeQuestion(card, allCards, difficultyMode, pool = { kanji: [], vocab: [] }) {
   const isVocabCard = card.type === 'vocab'
   let qType
 
@@ -25,16 +25,17 @@ function makeQuestion(card, allCards, difficultyMode) {
     else qType = 'kanji-reading'
   }
 
-  const kanjiPool = allCards.filter(c => c.type === 'kanji')
-  const allVocab = allCards.flatMap(c => c.vocab || [])
-
   let prompt, correctAnswer, choices, hint
 
   if (qType === 'kanji-meaning') {
     prompt = card.kanji
     correctAnswer = card.meaning
-    const wrongs = shuffle(kanjiPool.filter(c => c.meaning !== card.meaning))
-      .slice(0, CHOICES - 1).map(c => c.meaning)
+    const wrongs = shuffle(
+      [...pool.kanji, ...allCards.filter(c => c.type === 'kanji')]
+        .filter(c => c.meaning !== card.meaning)
+        .map(c => c.meaning)
+        .filter((v, i, a) => v && a.indexOf(v) === i)
+    ).slice(0, CHOICES - 1)
     choices = shuffle([correctAnswer, ...wrongs])
     hint = cleanReading(card.kun_readings?.[0] || card.on_readings?.[0] || '')
 
@@ -43,8 +44,10 @@ function makeQuestion(card, allCards, difficultyMode) {
     const reading = cleanReading(card.kun_readings?.[0] || card.on_readings?.[0] || '')
     correctAnswer = reading
     const wrongs = shuffle(
-      kanjiPool.map(c => cleanReading(c.kun_readings?.[0] || c.on_readings?.[0] || ''))
+      [...pool.kanji, ...allCards.filter(c => c.type === 'kanji')]
+        .map(c => cleanReading(c.kun_readings?.[0] || c.on_readings?.[0] || ''))
         .filter(r => r && r !== correctAnswer)
+        .filter((v, i, a) => a.indexOf(v) === i)
     ).slice(0, CHOICES - 1)
     choices = shuffle([correctAnswer, ...wrongs])
     hint = card.meaning
@@ -53,8 +56,12 @@ function makeQuestion(card, allCards, difficultyMode) {
     const vocabItem = isVocabCard ? card : shuffle(card.vocab)[0]
     prompt = vocabItem.word
     correctAnswer = vocabItem.reading
-    const wrongs = shuffle(allVocab.filter(v => v.reading !== correctAnswer))
-      .slice(0, CHOICES - 1).map(v => v.reading)
+    const wrongs = shuffle(
+      pool.vocab
+        .filter(v => v.reading !== correctAnswer)
+        .map(v => v.reading)
+        .filter((v, i, a) => v && a.indexOf(v) === i)
+    ).slice(0, CHOICES - 1)
     choices = shuffle([correctAnswer, ...wrongs])
     hint = vocabItem.meaning
 
@@ -62,8 +69,12 @@ function makeQuestion(card, allCards, difficultyMode) {
     const vocabItem = isVocabCard ? card : shuffle(card.vocab)[0]
     prompt = vocabItem.word
     correctAnswer = vocabItem.meaning
-    const wrongs = shuffle(allVocab.filter(v => v.meaning !== correctAnswer))
-      .slice(0, CHOICES - 1).map(v => v.meaning)
+    const wrongs = shuffle(
+      pool.vocab
+        .filter(v => v.meaning !== correctAnswer)
+        .map(v => v.meaning)
+        .filter((v, i, a) => v && a.indexOf(v) === i)
+    ).slice(0, CHOICES - 1)
     choices = shuffle([correctAnswer, ...wrongs])
     hint = vocabItem.reading
   }
@@ -118,11 +129,11 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
   const [isRetry, setIsRetry] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [selectedLevels, setSelectedLevels] = useState(['N3', 'N2']);
+  const [distractorPool, setDistractorPool] = useState({ kanji: [], vocab: [] });
   const timerRef = useRef(null);
   const fallRef = useRef(null);
   const halfHeartsRef = useRef(MAX_LIVES * 2);
 
-  // Auto-start if coming from Progress tab drill
   useEffect(() => {
     if (focusedDrill && phase === 'menu') {
       startGame('mixed', focusedDrill)
@@ -146,17 +157,27 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
     try {
       const cardIds = drillConfig?.cardIds || null
       const levels = drillConfig ? [drillConfig.level] : selectedLevels
-      const cards = await fetchSessionCards(userId, levels, cardIds)
+
+      const [cards, pool] = await Promise.all([
+        fetchSessionCards(userId, levels, cardIds),
+        fetchDistractorPool(levels),
+      ])
+
       if (clearFocusedDrill) clearFocusedDrill()
+
       if (!cards || cards.length === 0) {
         setLoadError("No cards found. Please check your database.");
         setPhase("menu");
         return;
       }
+
+      setDistractorPool(pool)
+
       const qs = cards.map(card => {
         const diff = mode === "easy" ? "easy" : mode === "hard" ? "hard" : Math.random() < 0.5 ? "hard" : "easy";
-        return makeQuestion(card, cards, diff);
+        return makeQuestion(card, cards, diff, pool);
       });
+
       halfHeartsRef.current = MAX_LIVES * 2;
       setDeck(cards); setQuestions(qs); setIndex(0);
       setHalfHearts(MAX_LIVES * 2); setScore(0); setStreak(0); setBestStreak(0); setMultiplier(1);
@@ -202,7 +223,7 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
 
   function injectRetry(card, origQ) {
     const insertAt = Math.min(index + 1 + Math.floor(Math.random() * 2) + 1, deck.length);
-    const retryQ = { ...makeQuestion(card, deck, origQ.difficultyMode), isRetry: true };
+    const retryQ = { ...makeQuestion(card, deck, origQ.difficultyMode, distractorPool), isRetry: true };
     setDeck(prev => { const n = [...prev]; n.splice(insertAt, 0, card); return n; });
     setQuestions(prev => { const n = [...prev]; n.splice(insertAt, 0, retryQ); return n; });
   }
@@ -336,9 +357,7 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
     return (
       <div style={{ ...s.shell, justifyContent: 'flex-start', paddingTop: 20 }}>
         <div style={s.resultWrap}>
-
-          {/* Score header */}
-          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <div style={{ textAlign: 'center', marginBottom: 12 }}>
             <div style={{ ...s.chip, color: modeInfo.accent, borderColor: modeInfo.border, marginBottom: 8, display: 'inline-block' }}>
               {modeInfo.icon} {modeInfo.label.toUpperCase()} MODE
             </div>
@@ -357,7 +376,7 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
             <button style={{ ...s.startBtn, flex: 2 }} onClick={() => startGame(drillMode)}>Again →</button>
           </div>
 
-          {/* Card list */}
+          {/* Per-card results */}
           <div style={s.resultList}>
             {firsts.map((r, i) => {
               const isVocab = r.q?.qType?.startsWith('vocab')
@@ -368,11 +387,8 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
               const totalCorrect = (progress?.total_correct || 0) + (isCorrect ? 1 : 0)
               const totalWrong = totalReviews - totalCorrect
               const accuracy = Math.round(totalCorrect / totalReviews * 100)
-
-              // For kanji cards show kun + on readings
               const kunReadings = card?.kun_readings?.map(cleanReading).filter(Boolean) || []
               const onReadings = card?.on_readings?.map(cleanReading).filter(Boolean) || []
-              // For vocab cards show the vocab reading
               const vocabReading = isVocab ? (r.q?.hint || card?.reading || '') : ''
               const meaning = card?.meaning || ''
               const prompt = r.q?.prompt || ''
@@ -384,7 +400,6 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
                   borderColor: isCorrect ? '#86efac' : '#fca5a5',
                   background: isCorrect ? '#f0fdf4' : '#fff1f2',
                 }}>
-                  {/* Top row */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ fontSize: isVocab ? 24 : 48, fontFamily: 'serif', lineHeight: 1, color: '#111' }}>
@@ -408,7 +423,6 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
                     </div>
                   </div>
 
-                  {/* Readings + meaning */}
                   {isVocab ? (
                     <div style={s.resultCardRow}>
                       <div style={s.resultCardBlock}>
@@ -432,14 +446,13 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
                           <div style={s.resultCardVal}>{onReadings.slice(0, 2).join('、') || '—'}</div>
                         </div>
                       </div>
-                      <div style={{ ...s.resultCardBlock, marginBottom: 10, background: '#fff' }}>
+                      <div style={{ ...s.resultCardBlock, marginBottom: 8 }}>
                         <div style={s.resultCardLbl}>Meaning</div>
                         <div style={s.resultCardVal}>{meaning || '—'}</div>
                       </div>
                     </>
                   )}
 
-                  {/* Correct answer if wrong */}
                   {!isCorrect && (
                     <div style={s.correctAnswerRow}>
                       <span style={{ ...s.resultCardLbl, color: '#166534' }}>Correct answer: </span>
@@ -447,7 +460,6 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
                     </div>
                   )}
 
-                  {/* Stats */}
                   <div style={s.resultStatsRow}>
                     <div style={s.resultStatCell}>
                       <span style={s.resultStatNum}>{totalReviews}</span>
@@ -470,7 +482,6 @@ export default function App({ session, focusedDrill, clearFocusedDrill }) {
               )
             })}
           </div>
-
         </div>
       </div>
     );
@@ -576,7 +587,6 @@ const s = {
   choiceBtn: { background: "#f9fafb", border: "1.5px solid #e5e7eb", borderRadius: 12, color: "#111", fontWeight: 500, padding: "12px 8px", cursor: "pointer", transition: "background 0.15s", lineHeight: 1.3 },
   progress: { marginTop: 14, color: "#bbb", fontSize: 12 },
   streak: { color: "#f97316", fontWeight: 700 },
-  // Result
   resultWrap: { width: "100%", maxWidth: 440 },
   resultScore: { fontSize: 52, fontWeight: 800, background: "linear-gradient(135deg, #7c3aed, #4f46e5)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", lineHeight: 1 },
   resultLabel: { color: "#aaa", fontSize: 13, marginBottom: 12 },
@@ -588,7 +598,7 @@ const s = {
   resultList: { display: "flex", flexDirection: "column", gap: 12, paddingBottom: 20 },
   resultCard: { border: "1.5px solid", borderRadius: 16, padding: "14px", textAlign: "left" },
   resultCardRow: { display: "flex", gap: 8, marginBottom: 8 },
-  resultCardBlock: { flex: 1, background: "#fff", borderRadius: 10, padding: "8px 10px", marginBottom: 0 },
+  resultCardBlock: { flex: 1, background: "#fff", borderRadius: 10, padding: "8px 10px" },
   resultCardLbl: { fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 },
   resultCardVal: { fontSize: 14, fontFamily: "serif", color: "#111" },
   correctAnswerRow: { background: "#dcfce7", borderRadius: 8, padding: "6px 10px", marginBottom: 8, fontSize: 13 },
