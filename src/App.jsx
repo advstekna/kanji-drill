@@ -6,15 +6,10 @@ const MAX_LIVES = 3;
 const CHOICES = 4;
 const FAST_WINDOW = 3000;
 
-
 function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
 function getLevelColor(level) { return level === "N3" ? "#16a34a" : "#b45309"; }
 
-// ── Build a question from a card ─────────────────────────────────────────
-// card.type === 'kanji' or 'vocab'
-// difficultyMode: 'easy' | 'hard'
 function makeQuestion(card, allCards, difficultyMode) {
-  // Decide question type based on card type
   const isVocabCard = card.type === 'vocab'
   let qType
 
@@ -22,7 +17,6 @@ function makeQuestion(card, allCards, difficultyMode) {
     qType = Math.random() < 0.5 ? 'vocab-reading' : 'vocab-meaning'
   } else {
     const roll = Math.random()
-    // If card has vocab, mix in vocab questions
     const hasVocab = card.vocab && card.vocab.length > 0
     if (hasVocab && roll < 0.2) qType = 'vocab-reading'
     else if (hasVocab && roll < 0.4) qType = 'vocab-meaning'
@@ -30,9 +24,7 @@ function makeQuestion(card, allCards, difficultyMode) {
     else qType = 'kanji-reading'
   }
 
-  // Pool for wrong answers — all cards in the session
   const kanjiPool = allCards.filter(c => c.type === 'kanji')
-  const vocabPool = allCards.filter(c => c.type === 'vocab' || (c.vocab && c.vocab.length > 0))
   const allVocab = allCards.flatMap(c => c.vocab || [])
 
   let prompt, correctAnswer, choices, hint
@@ -43,25 +35,20 @@ function makeQuestion(card, allCards, difficultyMode) {
     const wrongs = shuffle(kanjiPool.filter(c => c.meaning !== card.meaning))
       .slice(0, CHOICES - 1).map(c => c.meaning)
     choices = shuffle([correctAnswer, ...wrongs])
-    hint = card.readings?.[0] || card.kun_readings?.[0] || card.on_readings?.[0] || ''
+    hint = card.kun_readings?.[0] || card.on_readings?.[0] || card.readings?.[0] || ''
 
   } else if (qType === 'kanji-reading') {
     prompt = card.kanji
     const reading = card.kun_readings?.[0] || card.on_readings?.[0] || card.readings?.[0] || ''
     correctAnswer = reading
     const wrongs = shuffle(
-      kanjiPool
-        .map(c => c.kun_readings?.[0] || c.on_readings?.[0] || '')
-        .filter(r => r && r !== correctAnswer)
+      kanjiPool.map(c => c.kun_readings?.[0] || c.on_readings?.[0] || '').filter(r => r && r !== correctAnswer)
     ).slice(0, CHOICES - 1)
     choices = shuffle([correctAnswer, ...wrongs])
     hint = card.meaning
 
   } else if (qType === 'vocab-reading') {
-    // Pick vocab — from card.vocab if kanji card, or card itself if vocab card
-    const vocabItem = isVocabCard
-      ? card
-      : shuffle(card.vocab)[0]
+    const vocabItem = isVocabCard ? card : shuffle(card.vocab)[0]
     prompt = vocabItem.word
     correctAnswer = vocabItem.reading
     const wrongs = shuffle(allVocab.filter(v => v.reading !== correctAnswer))
@@ -69,10 +56,8 @@ function makeQuestion(card, allCards, difficultyMode) {
     choices = shuffle([correctAnswer, ...wrongs])
     hint = vocabItem.meaning
 
-  } else { // vocab-meaning
-    const vocabItem = isVocabCard
-      ? card
-      : shuffle(card.vocab)[0]
+  } else {
+    const vocabItem = isVocabCard ? card : shuffle(card.vocab)[0]
     prompt = vocabItem.word
     correctAnswer = vocabItem.meaning
     const wrongs = shuffle(allVocab.filter(v => v.meaning !== correctAnswer))
@@ -84,7 +69,6 @@ function makeQuestion(card, allCards, difficultyMode) {
   return { qType, prompt, correctAnswer, choices, hint, difficultyMode, isRetry: false }
 }
 
-// ── Hearts component ──────────────────────────────────────────────────────
 function Hearts({ halfHearts }) {
   return (
     <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -113,14 +97,15 @@ const DRILL_MODES = [
 export default function App({ session }) {
   const userId = session.user.id
 
-  const [phase, setPhase] = useState("menu"); // menu | loading | playing | result
+  const [phase, setPhase] = useState("menu");
   const [drillMode, setDrillMode] = useState(null);
-  const [deck, setDeck] = useState([]);        // raw card objects from DB
-  const [questions, setQuestions] = useState([]); // question objects
+  const [deck, setDeck] = useState([]);
+  const [questions, setQuestions] = useState([]);
   const [index, setIndex] = useState(0);
   const [halfHearts, setHalfHearts] = useState(MAX_LIVES * 2);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
   const [multiplier, setMultiplier] = useState(1);
   const [timeLeft, setTimeLeft] = useState(TIMER_SECONDS);
   const [fallProgress, setFallProgress] = useState(0);
@@ -130,10 +115,10 @@ export default function App({ session }) {
   const [cardStartTime, setCardStartTime] = useState(null);
   const [isRetry, setIsRetry] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [selectedLevels, setSelectedLevels] = useState(['N3', 'N2']);
   const timerRef = useRef(null);
   const fallRef = useRef(null);
   const halfHeartsRef = useRef(MAX_LIVES * 2);
-  const [selectedLevels, setSelectedLevels] = useState(['N3', 'N2'])
 
   function toggleLevel(level) {
     setSelectedLevels(prev => {
@@ -144,11 +129,11 @@ export default function App({ session }) {
       return [...prev, level]
     })
   }
+
   const startGame = useCallback(async (mode) => {
     setPhase("loading");
     setLoadError(null);
     setDrillMode(mode);
-
     try {
       const cards = await fetchSessionCards(userId, selectedLevels);
       if (!cards || cards.length === 0) {
@@ -156,44 +141,30 @@ export default function App({ session }) {
         setPhase("menu");
         return;
       }
-
       const qs = cards.map(card => {
         const diff = mode === "easy" ? "easy" : mode === "hard" ? "hard" : Math.random() < 0.5 ? "hard" : "easy";
         return makeQuestion(card, cards, diff);
       });
-
       halfHeartsRef.current = MAX_LIVES * 2;
-      setDeck(cards);
-      setQuestions(qs);
-      setIndex(0);
-      setHalfHearts(MAX_LIVES * 2);
-      setScore(0);
-      setStreak(0);
-      setMultiplier(1);
-      setResults([]);
-      setIsRetry(false);
-      setPhase("playing");
+      setDeck(cards); setQuestions(qs); setIndex(0);
+      setHalfHearts(MAX_LIVES * 2); setScore(0); setStreak(0); setBestStreak(0); setMultiplier(1);
+      setResults([]); setIsRetry(false); setPhase("playing");
     } catch (err) {
       console.error(err);
       setLoadError("Failed to load cards. Please try again.");
       setPhase("menu");
     }
-  }, [userId]);
+  }, [userId, selectedLevels]);
 
   const currentCard = deck[index];
   const currentQ = questions[index];
 
-  // Reset state per card
   useEffect(() => {
     if (phase !== "playing" || !currentQ) return;
-    setTimeLeft(TIMER_SECONDS);
-    setFallProgress(0);
-    setFeedback(null);
-    setAnswered(false);
-    setCardStartTime(Date.now());
+    setTimeLeft(TIMER_SECONDS); setFallProgress(0);
+    setFeedback(null); setAnswered(false); setCardStartTime(Date.now());
   }, [index, phase, currentQ]);
 
-  // Timer
   useEffect(() => {
     if (phase !== "playing" || answered || !currentQ) return;
     timerRef.current = setInterval(() => {
@@ -205,7 +176,6 @@ export default function App({ session }) {
     return () => clearInterval(timerRef.current);
   }, [index, phase, answered]);
 
-  // Fall animation
   useEffect(() => {
     if (phase !== "playing" || answered || !currentQ) return;
     const start = Date.now();
@@ -215,17 +185,8 @@ export default function App({ session }) {
     return () => clearInterval(fallRef.current);
   }, [index, phase, answered]);
 
-  function loseHalfHeart() {
-    const n = halfHeartsRef.current - 1;
-    halfHeartsRef.current = n;
-    setHalfHearts(n);
-    return n;
-  }
-  function gainHalfHeart() {
-    const n = Math.min(halfHeartsRef.current + 1, MAX_LIVES * 2);
-    halfHeartsRef.current = n;
-    setHalfHearts(n);
-  }
+  function loseHalfHeart() { const n = halfHeartsRef.current - 1; halfHeartsRef.current = n; setHalfHearts(n); return n; }
+  function gainHalfHeart() { const n = Math.min(halfHeartsRef.current + 1, MAX_LIVES * 2); halfHeartsRef.current = n; setHalfHearts(n); }
 
   function injectRetry(card, origQ) {
     const insertAt = Math.min(index + 1 + Math.floor(Math.random() * 2) + 1, deck.length);
@@ -241,15 +202,10 @@ export default function App({ session }) {
   }
 
   function handleTimeout() {
-    clearInterval(timerRef.current);
-    clearInterval(fallRef.current);
-    setAnswered(true);
-    setFeedback("wrong");
-    const remaining = loseHalfHeart();
-    setStreak(0);
-    setMultiplier(1);
+    clearInterval(timerRef.current); clearInterval(fallRef.current);
+    setAnswered(true); setFeedback("wrong");
+    const remaining = loseHalfHeart(); setStreak(0); setMultiplier(1);
     if (!isRetry) injectRetry(currentCard, currentQ);
-    // Record review — timeout counts as wrong
     recordReview(userId, currentCard, false, TIMER_SECONDS * 1000, drillMode, currentQ.qType);
     setResults(r => [...r, { card: currentCard, q: currentQ, correct: false, timeout: true, retry: isRetry }]);
     setTimeout(() => advance(remaining), 1500);
@@ -257,33 +213,23 @@ export default function App({ session }) {
 
   function handleChoice(choice) {
     if (answered) return;
-    clearInterval(timerRef.current);
-    clearInterval(fallRef.current);
+    clearInterval(timerRef.current); clearInterval(fallRef.current);
     setAnswered(true);
-
     const elapsed = Date.now() - cardStartTime;
     const isCorrect = choice === currentQ.correctAnswer;
     const isFast = elapsed < FAST_WINDOW;
-
-    // Record review in DB (fire and forget — don't block UI)
-    if (!isRetry) {
-      recordReview(userId, currentCard, isCorrect, elapsed, drillMode, currentQ.qType);
-    }
-
+    if (!isRetry) recordReview(userId, currentCard, isCorrect, elapsed, drillMode, currentQ.qType);
     if (isCorrect) {
       const { points, newMult } = calcPoints(isFast, currentQ.difficultyMode);
-      setStreak(s => s + 1);
-      setMultiplier(newMult);
-      setScore(s => s + points);
-      if (isRetry) { gainHalfHeart(); setFeedback("recover"); }
-      else setFeedback("correct");
+      const newStreak = streak + 1;
+      setStreak(newStreak);
+      setBestStreak(prev => Math.max(prev, newStreak));
+      setMultiplier(newMult); setScore(s => s + points);
+      if (isRetry) { gainHalfHeart(); setFeedback("recover"); } else setFeedback("correct");
       setResults(r => [...r, { card: currentCard, q: currentQ, correct: true, fast: isFast, points, retry: isRetry }]);
       setTimeout(() => advance(halfHeartsRef.current), 1200);
     } else {
-      const remaining = loseHalfHeart();
-      setStreak(0);
-      setMultiplier(1);
-      setFeedback("wrong");
+      const remaining = loseHalfHeart(); setStreak(0); setMultiplier(1); setFeedback("wrong");
       if (!isRetry) injectRetry(currentCard, currentQ);
       setResults(r => [...r, { card: currentCard, q: currentQ, correct: false, retry: isRetry }]);
       setTimeout(() => advance(remaining), 1500);
@@ -325,31 +271,27 @@ export default function App({ session }) {
           <h1 style={s.menuTitle}>Speed Drill</h1>
           <p style={s.menuSub}>kanji &amp; vocabulary</p>
 
+          {loadError && <div style={s.errorBox}>{loadError}</div>}
+
+          {/* Level selector */}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 20 }}>
             {['N3', 'N2'].map(level => {
               const active = selectedLevels.includes(level)
-              const color = level === 'N3' ? '#16a34a' : '#b45309'
+              const color = getLevelColor(level)
               return (
-                <button
-                  key={level}
-                  onClick={() => toggleLevel(level)}
-                  style={{
-                    padding: '6px 20px', borderRadius: 20, border: '1.5px solid',
-                    fontWeight: 700, fontSize: 14, cursor: 'pointer',
-                    background: active ? color : '#fff',
-                    borderColor: color,
-                    color: active ? '#fff' : color,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {level}
-                </button>
+                <button key={level} onClick={() => toggleLevel(level)} style={{
+                  padding: '6px 20px', borderRadius: 20, border: '1.5px solid',
+                  fontWeight: 700, fontSize: 14, cursor: 'pointer',
+                  background: active ? color : '#fff',
+                  borderColor: color,
+                  color: active ? '#fff' : color,
+                  transition: 'all 0.15s',
+                }}>{level}</button>
               )
             })}
           </div>
 
-          {loadError && <div style={s.errorBox}>{loadError}</div>}
-
+          {/* Mode cards */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
             {DRILL_MODES.map(m => (
               <button key={m.key} onClick={() => startGame(m.key)}
@@ -386,51 +328,108 @@ export default function App({ session }) {
     const firsts = results.filter(r => !r.retry);
     const correct = firsts.filter(r => r.correct).length;
     const pct = firsts.length ? Math.round(correct / firsts.length * 100) : 0;
-    const hardCards = firsts.filter(r => r.q?.difficultyMode === "hard");
-    const easyCards = firsts.filter(r => r.q?.difficultyMode === "easy");
-    const hPct = hardCards.length ? Math.round(hardCards.filter(r => r.correct).length / hardCards.length * 100) : null;
-    const ePct = easyCards.length ? Math.round(easyCards.filter(r => r.correct).length / easyCards.length * 100) : null;
     const modeInfo = DRILL_MODES.find(m => m.key === drillMode);
-    const isVocabQ = q => q?.qType?.startsWith("vocab");
-    const vocabResults = firsts.filter(r => isVocabQ(r.q));
-    const kanjiResults = firsts.filter(r => !isVocabQ(r.q));
-    const vPct = vocabResults.length ? Math.round(vocabResults.filter(r => r.correct).length / vocabResults.length * 100) : null;
-    const kPct = kanjiResults.length ? Math.round(kanjiResults.filter(r => r.correct).length / kanjiResults.length * 100) : null;
 
     return (
       <div style={s.shell}>
         <div style={s.resultWrap}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: modeInfo.accent, marginBottom: 6 }}>
+          <div style={{ ...s.chip, color: modeInfo.accent, borderColor: modeInfo.border, marginBottom: 8, display: 'inline-block' }}>
             {modeInfo.icon} {modeInfo.label.toUpperCase()} MODE
           </div>
           <div style={s.resultScore}>{score.toLocaleString()}</div>
           <div style={s.resultLabel}>points</div>
+
           <div style={s.resultStats}>
             <div style={s.statBlock}><span style={s.statNum}>{correct}/{firsts.length}</span><span style={s.statLbl}>correct</span></div>
             <div style={s.statBlock}><span style={s.statNum}>{pct}%</span><span style={s.statLbl}>accuracy</span></div>
-            {kPct !== null && <div style={s.statBlock}><span style={{ ...s.statNum, color: "#4f46e5" }}>{kPct}%</span><span style={s.statLbl}>kanji</span></div>}
-            {vPct !== null && <div style={s.statBlock}><span style={{ ...s.statNum, color: "#0891b2" }}>{vPct}%</span><span style={s.statLbl}>vocab</span></div>}
-            {ePct !== null && <div style={s.statBlock}><span style={{ ...s.statNum, color: "#16a34a" }}>{ePct}%</span><span style={s.statLbl}>easy</span></div>}
-            {hPct !== null && <div style={s.statBlock}><span style={{ ...s.statNum, color: "#dc2626" }}>{hPct}%</span><span style={s.statLbl}>hard</span></div>}
+            <div style={s.statBlock}><span style={s.statNum}>{bestStreak}</span><span style={s.statLbl}>best streak</span></div>
           </div>
+
           <div style={s.resultList}>
             {firsts.map((r, i) => {
-              const hard = r.q?.difficultyMode === "hard";
-              const vocab = isVocabQ(r.q);
+              const isVocab = r.q?.qType?.startsWith('vocab')
+              const isCorrect = r.correct
+              const progress = r.card?.progress
+              const totalReviews = (progress?.total_reviews || 0) + 1
+              const totalCorrect = (progress?.total_correct || 0) + (isCorrect ? 1 : 0)
+              const totalWrong = totalReviews - totalCorrect
+              const accuracy = Math.round(totalCorrect / totalReviews * 100)
+              const reading = r.card?.kun_readings?.[0] || r.card?.on_readings?.[0] || r.card?.readings?.[0] || r.card?.reading || ''
+              const meaning = r.card?.meaning || ''
+              const prompt = r.q?.prompt || ''
+              const correctAnswer = r.q?.correctAnswer || ''
+
               return (
-                <div key={i} style={{ ...s.resultRow, opacity: r.correct ? 1 : 0.5 }}>
-                  <span style={{ fontSize: vocab ? 14 : 20, fontFamily: "serif", minWidth: 40, textAlign: "left" }}>{r.q?.prompt}</span>
-                  <span style={{ color: "#555", fontSize: 11, flex: 1, textAlign: "left" }}>{r.q?.correctAnswer}</span>
-                  <span style={{ fontSize: 10, padding: "2px 5px", borderRadius: 4, background: vocab ? "#e0f2fe" : "#ede9fe", color: vocab ? "#0891b2" : "#7c3aed", fontWeight: 600, whiteSpace: "nowrap" }}>
-                    {vocab ? "📖 vocab" : "漢 kanji"}
-                  </span>
-                  <span style={{ color: getLevelColor(r.card?.level), fontSize: 10, fontWeight: 700 }}>{r.card?.level}</span>
-                  <span style={{ color: r.correct ? "#16a34a" : "#dc2626" }}>{r.correct ? "✓" : "✗"}</span>
-                  {r.points && <span style={{ color: "#7c3aed", fontSize: 11, minWidth: 36 }}>+{r.points}</span>}
+                <div key={i} style={{
+                  ...s.resultCard,
+                  borderColor: isCorrect ? '#86efac' : '#fca5a5',
+                  background: isCorrect ? '#f0fdf4' : '#fff1f2',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ fontSize: isVocab ? 28 : 48, fontFamily: 'serif', lineHeight: 1, color: '#111' }}>
+                        {prompt}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: getLevelColor(r.card?.level), textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                          {r.card?.level}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>
+                          {isVocab ? '📖 vocab' : '漢 kanji'}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{
+                      fontSize: 13, fontWeight: 700,
+                      padding: '4px 12px', borderRadius: 20,
+                      background: isCorrect ? '#dcfce7' : '#fee2e2',
+                      color: isCorrect ? '#166534' : '#dc2626',
+                    }}>
+                      {isCorrect ? '✓' : '✗'}
+                    </div>
+                  </div>
+
+                  <div style={s.resultCardRow}>
+                    <div style={s.resultCardBlock}>
+                      <div style={s.resultCardLbl}>Reading</div>
+                      <div style={s.resultCardVal}>{reading || '—'}</div>
+                    </div>
+                    <div style={s.resultCardBlock}>
+                      <div style={s.resultCardLbl}>Meaning</div>
+                      <div style={s.resultCardVal}>{meaning || '—'}</div>
+                    </div>
+                  </div>
+
+                  {!isCorrect && (
+                    <div style={s.correctAnswerRow}>
+                      <span style={s.resultCardLbl}>Correct answer: </span>
+                      <span style={{ fontFamily: 'serif', color: '#166534', fontWeight: 600 }}>{correctAnswer}</span>
+                    </div>
+                  )}
+
+                  <div style={s.resultStatsRow}>
+                    <div style={s.resultStatCell}>
+                      <span style={s.resultStatNum}>{totalReviews}</span>
+                      <span style={s.resultStatLbl}>seen</span>
+                    </div>
+                    <div style={s.resultStatCell}>
+                      <span style={{ ...s.resultStatNum, color: '#16a34a' }}>{totalCorrect}</span>
+                      <span style={s.resultStatLbl}>correct</span>
+                    </div>
+                    <div style={s.resultStatCell}>
+                      <span style={{ ...s.resultStatNum, color: '#dc2626' }}>{totalWrong}</span>
+                      <span style={s.resultStatLbl}>wrong</span>
+                    </div>
+                    <div style={s.resultStatCell}>
+                      <span style={s.resultStatNum}>{accuracy}%</span>
+                      <span style={s.resultStatLbl}>accuracy</span>
+                    </div>
+                  </div>
                 </div>
-              );
+              )
             })}
           </div>
+
           <div style={{ display: "flex", gap: 10 }}>
             <button style={{ ...s.startBtn, flex: 1, background: "#f3f4f6", color: "#333" }} onClick={() => setPhase("menu")}>← Menu</button>
             <button style={{ ...s.startBtn, flex: 2 }} onClick={() => startGame(drillMode)}>Again →</button>
@@ -478,12 +477,12 @@ export default function App({ session }) {
       <div style={{ ...s.cardWrap, transform: `translateY(${cardY}px)`, opacity: feedback === "wrong" ? 0.5 : 1 }}>
         <div style={{ ...s.card, borderColor: cardBorder, boxShadow: cardShadow, background: isHard ? "#fffafa" : "#fff" }}>
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-          <div style={{ ...s.levelBadge, color: getLevelColor(currentCard.level) }}>{currentCard.level}</div>
-          {currentCard.progress
-            ? <div style={{ fontSize: 10, fontWeight: 700, color: '#0891b2', background: '#e0f2fe', borderRadius: 20, padding: '2px 8px', letterSpacing: '0.06em' }}>SEEN</div>
-            : <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', background: '#f3f4f6', borderRadius: 20, padding: '2px 8px', letterSpacing: '0.06em' }}>NEW</div>
-          }
-        </div>
+            <div style={{ ...s.levelBadge, color: getLevelColor(currentCard.level) }}>{currentCard.level}</div>
+            {currentCard.progress
+              ? <div style={{ fontSize: 10, fontWeight: 700, color: '#0891b2', background: '#e0f2fe', borderRadius: 20, padding: '2px 8px', letterSpacing: '0.06em' }}>SEEN</div>
+              : <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', background: '#f3f4f6', borderRadius: 20, padding: '2px 8px', letterSpacing: '0.06em' }}>NEW</div>
+            }
+          </div>
           <div style={{ ...s.kanjiGlyph, fontSize: isVocabQ ? 32 : 84 }}>{currentQ.prompt}</div>
           {isHard && !answered
             ? <div style={{ ...s.hint, color: "#ddd", letterSpacing: "0.2em" }}>• • •</div>
@@ -538,20 +537,30 @@ const s = {
   chip: { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", border: "1px solid", borderRadius: 20, padding: "3px 10px" },
   cardWrap: { transition: "transform 0.05s linear, opacity 0.15s", marginBottom: 20 },
   card: { border: "1.5px solid", borderRadius: 20, padding: "20px 40px", textAlign: "center", minWidth: 220, transition: "box-shadow 0.15s, border-color 0.15s" },
-  levelBadge: { fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", marginBottom: 6, textTransform: "uppercase" },
+  levelBadge: { fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" },
   kanjiGlyph: { fontFamily: "serif", lineHeight: 1.2, marginBottom: 6, color: "#111" },
   hint: { color: "#aaa", fontSize: 13, fontFamily: "serif", minHeight: 20 },
   choices: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, width: "100%", maxWidth: 400 },
   choiceBtn: { background: "#f9fafb", border: "1.5px solid #e5e7eb", borderRadius: 12, color: "#111", fontWeight: 500, padding: "12px 8px", cursor: "pointer", transition: "background 0.15s", lineHeight: 1.3 },
   progress: { marginTop: 14, color: "#bbb", fontSize: 12 },
   streak: { color: "#f97316", fontWeight: 700 },
+  // Result
   resultWrap: { textAlign: "center", maxWidth: 440, width: "100%" },
   resultScore: { fontSize: 56, fontWeight: 800, background: "linear-gradient(135deg, #7c3aed, #4f46e5)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", lineHeight: 1 },
   resultLabel: { color: "#aaa", fontSize: 13, marginBottom: 16 },
-  resultStats: { display: "flex", justifyContent: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" },
+  resultStats: { display: "flex", justifyContent: "center", gap: 16, marginBottom: 20 },
   statBlock: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 },
   statNum: { fontSize: 20, fontWeight: 700, color: "#111" },
   statLbl: { fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.08em" },
-  resultList: { maxHeight: 300, overflowY: "auto", marginBottom: 20, display: "flex", flexDirection: "column", gap: 6 },
-  resultRow: { display: "flex", alignItems: "center", gap: 8, background: "#f9fafb", border: "1px solid #f3f4f6", borderRadius: 10, padding: "8px 12px" },
+  resultList: { maxHeight: "55vh", overflowY: "auto", marginBottom: 20, display: "flex", flexDirection: "column", gap: 10 },
+  resultCard: { border: "1.5px solid", borderRadius: 16, padding: "14px", textAlign: "left" },
+  resultCardRow: { display: "flex", gap: 8, marginBottom: 10 },
+  resultCardBlock: { flex: 1, background: "#fff", borderRadius: 10, padding: "8px 10px" },
+  resultCardLbl: { fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 },
+  resultCardVal: { fontSize: 14, fontFamily: "serif", color: "#111" },
+  correctAnswerRow: { background: "#dcfce7", borderRadius: 8, padding: "6px 10px", marginBottom: 10, fontSize: 13 },
+  resultStatsRow: { display: "flex", gap: 6 },
+  resultStatCell: { flex: 1, background: "#fff", borderRadius: 10, padding: "8px 6px", textAlign: "center" },
+  resultStatNum: { display: "block", fontSize: 16, fontWeight: 700, color: "#111" },
+  resultStatLbl: { display: "block", fontSize: 9, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 },
 };
