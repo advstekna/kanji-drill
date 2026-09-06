@@ -8,6 +8,7 @@ const FAST_WINDOW = 3000;
 
 function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
 function getLevelColor(level) { return level === "N3" ? "#16a34a" : "#b45309"; }
+function cleanReading(r) { return r ? r.replace(/\./g, '').replace(/-/g, '') : '' }
 
 function makeQuestion(card, allCards, difficultyMode) {
   const isVocabCard = card.type === 'vocab'
@@ -35,14 +36,15 @@ function makeQuestion(card, allCards, difficultyMode) {
     const wrongs = shuffle(kanjiPool.filter(c => c.meaning !== card.meaning))
       .slice(0, CHOICES - 1).map(c => c.meaning)
     choices = shuffle([correctAnswer, ...wrongs])
-    hint = card.kun_readings?.[0] || card.on_readings?.[0] || card.readings?.[0] || ''
+    hint = cleanReading(card.kun_readings?.[0] || card.on_readings?.[0] || '')
 
   } else if (qType === 'kanji-reading') {
     prompt = card.kanji
-    const reading = card.kun_readings?.[0] || card.on_readings?.[0] || card.readings?.[0] || ''
+    const reading = cleanReading(card.kun_readings?.[0] || card.on_readings?.[0] || '')
     correctAnswer = reading
     const wrongs = shuffle(
-      kanjiPool.map(c => c.kun_readings?.[0] || c.on_readings?.[0] || '').filter(r => r && r !== correctAnswer)
+      kanjiPool.map(c => cleanReading(c.kun_readings?.[0] || c.on_readings?.[0] || ''))
+        .filter(r => r && r !== correctAnswer)
     ).slice(0, CHOICES - 1)
     choices = shuffle([correctAnswer, ...wrongs])
     hint = card.meaning
@@ -94,7 +96,7 @@ const DRILL_MODES = [
   { key: "hard",  label: "Hard",  jp: "むずかしい", desc: "No hints — every card earns 2× points",         icon: "🔥", accent: "#dc2626", bg: "#fff1f2", border: "#fecdd3" },
 ];
 
-export default function App({ session }) {
+export default function App({ session, focusedDrill, clearFocusedDrill }) {
   const userId = session.user.id
 
   const [phase, setPhase] = useState("menu");
@@ -120,6 +122,13 @@ export default function App({ session }) {
   const fallRef = useRef(null);
   const halfHeartsRef = useRef(MAX_LIVES * 2);
 
+  // Auto-start if coming from Progress tab drill
+  useEffect(() => {
+    if (focusedDrill && phase === 'menu') {
+      startGame('mixed', focusedDrill)
+    }
+  }, [focusedDrill])
+
   function toggleLevel(level) {
     setSelectedLevels(prev => {
       if (prev.includes(level)) {
@@ -130,12 +139,15 @@ export default function App({ session }) {
     })
   }
 
-  const startGame = useCallback(async (mode) => {
+  const startGame = useCallback(async (mode, drillConfig = null) => {
     setPhase("loading");
     setLoadError(null);
     setDrillMode(mode);
     try {
-      const cards = await fetchSessionCards(userId, selectedLevels);
+      const cardIds = drillConfig?.cardIds || null
+      const levels = drillConfig ? [drillConfig.level] : selectedLevels
+      const cards = await fetchSessionCards(userId, levels, cardIds)
+      if (clearFocusedDrill) clearFocusedDrill()
       if (!cards || cards.length === 0) {
         setLoadError("No cards found. Please check your database.");
         setPhase("menu");
@@ -270,10 +282,7 @@ export default function App({ session }) {
           <div style={s.menuKanji}>漢字</div>
           <h1 style={s.menuTitle}>Speed Drill</h1>
           <p style={s.menuSub}>kanji &amp; vocabulary</p>
-
           {loadError && <div style={s.errorBox}>{loadError}</div>}
-
-          {/* Level selector */}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 20 }}>
             {['N3', 'N2'].map(level => {
               const active = selectedLevels.includes(level)
@@ -283,15 +292,11 @@ export default function App({ session }) {
                   padding: '6px 20px', borderRadius: 20, border: '1.5px solid',
                   fontWeight: 700, fontSize: 14, cursor: 'pointer',
                   background: active ? color : '#fff',
-                  borderColor: color,
-                  color: active ? '#fff' : color,
-                  transition: 'all 0.15s',
+                  borderColor: color, color: active ? '#fff' : color,
                 }}>{level}</button>
               )
             })}
           </div>
-
-          {/* Mode cards */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
             {DRILL_MODES.map(m => (
               <button key={m.key} onClick={() => startGame(m.key)}
@@ -309,14 +314,12 @@ export default function App({ session }) {
               </button>
             ))}
           </div>
-
           <div style={s.pillRow}>
             <span style={s.pill}>⏱ 10 sec</span>
             <span style={s.pill}>❤️ 3 lives</span>
             <span style={s.pill}>🔁 Wrong = retry</span>
             <span style={s.pill}>📖 Vocab included</span>
           </div>
-
           <button onClick={handleSignOut} style={s.signOutBtn}>Sign out</button>
         </div>
       </div>
@@ -331,31 +334,47 @@ export default function App({ session }) {
     const modeInfo = DRILL_MODES.find(m => m.key === drillMode);
 
     return (
-      <div style={s.shell}>
+      <div style={{ ...s.shell, justifyContent: 'flex-start', paddingTop: 20 }}>
         <div style={s.resultWrap}>
-          <div style={{ ...s.chip, color: modeInfo.accent, borderColor: modeInfo.border, marginBottom: 8, display: 'inline-block' }}>
-            {modeInfo.icon} {modeInfo.label.toUpperCase()} MODE
-          </div>
-          <div style={s.resultScore}>{score.toLocaleString()}</div>
-          <div style={s.resultLabel}>points</div>
 
-          <div style={s.resultStats}>
-            <div style={s.statBlock}><span style={s.statNum}>{correct}/{firsts.length}</span><span style={s.statLbl}>correct</span></div>
-            <div style={s.statBlock}><span style={s.statNum}>{pct}%</span><span style={s.statLbl}>accuracy</span></div>
-            <div style={s.statBlock}><span style={s.statNum}>{bestStreak}</span><span style={s.statLbl}>best streak</span></div>
+          {/* Score header */}
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <div style={{ ...s.chip, color: modeInfo.accent, borderColor: modeInfo.border, marginBottom: 8, display: 'inline-block' }}>
+              {modeInfo.icon} {modeInfo.label.toUpperCase()} MODE
+            </div>
+            <div style={s.resultScore}>{score.toLocaleString()}</div>
+            <div style={s.resultLabel}>points</div>
+            <div style={s.resultStats}>
+              <div style={s.statBlock}><span style={s.statNum}>{correct}/{firsts.length}</span><span style={s.statLbl}>correct</span></div>
+              <div style={s.statBlock}><span style={s.statNum}>{pct}%</span><span style={s.statLbl}>accuracy</span></div>
+              <div style={s.statBlock}><span style={s.statNum}>{bestStreak}</span><span style={s.statLbl}>best streak</span></div>
+            </div>
           </div>
 
+          {/* Sticky action buttons */}
+          <div style={s.resultActions}>
+            <button style={{ ...s.startBtn, flex: 1, background: "#f3f4f6", color: "#333" }} onClick={() => setPhase("menu")}>← Menu</button>
+            <button style={{ ...s.startBtn, flex: 2 }} onClick={() => startGame(drillMode)}>Again →</button>
+          </div>
+
+          {/* Card list */}
           <div style={s.resultList}>
             {firsts.map((r, i) => {
               const isVocab = r.q?.qType?.startsWith('vocab')
               const isCorrect = r.correct
-              const progress = r.card?.progress
+              const card = r.card
+              const progress = card?.progress
               const totalReviews = (progress?.total_reviews || 0) + 1
               const totalCorrect = (progress?.total_correct || 0) + (isCorrect ? 1 : 0)
               const totalWrong = totalReviews - totalCorrect
               const accuracy = Math.round(totalCorrect / totalReviews * 100)
-              const reading = r.card?.kun_readings?.[0] || r.card?.on_readings?.[0] || r.card?.readings?.[0] || r.card?.reading || ''
-              const meaning = r.card?.meaning || ''
+
+              // For kanji cards show kun + on readings
+              const kunReadings = card?.kun_readings?.map(cleanReading).filter(Boolean) || []
+              const onReadings = card?.on_readings?.map(cleanReading).filter(Boolean) || []
+              // For vocab cards show the vocab reading
+              const vocabReading = isVocab ? (r.q?.hint || card?.reading || '') : ''
+              const meaning = card?.meaning || ''
               const prompt = r.q?.prompt || ''
               const correctAnswer = r.q?.correctAnswer || ''
 
@@ -365,14 +384,15 @@ export default function App({ session }) {
                   borderColor: isCorrect ? '#86efac' : '#fca5a5',
                   background: isCorrect ? '#f0fdf4' : '#fff1f2',
                 }}>
+                  {/* Top row */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ fontSize: isVocab ? 28 : 48, fontFamily: 'serif', lineHeight: 1, color: '#111' }}>
+                      <div style={{ fontSize: isVocab ? 24 : 48, fontFamily: 'serif', lineHeight: 1, color: '#111' }}>
                         {prompt}
                       </div>
                       <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: getLevelColor(r.card?.level), textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                          {r.card?.level}
+                        <div style={{ fontSize: 11, fontWeight: 700, color: getLevelColor(card?.level), textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          {card?.level}
                         </div>
                         <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>
                           {isVocab ? '📖 vocab' : '漢 kanji'}
@@ -380,8 +400,7 @@ export default function App({ session }) {
                       </div>
                     </div>
                     <div style={{
-                      fontSize: 13, fontWeight: 700,
-                      padding: '4px 12px', borderRadius: 20,
+                      fontSize: 16, fontWeight: 700, padding: '4px 12px', borderRadius: 20,
                       background: isCorrect ? '#dcfce7' : '#fee2e2',
                       color: isCorrect ? '#166534' : '#dc2626',
                     }}>
@@ -389,24 +408,46 @@ export default function App({ session }) {
                     </div>
                   </div>
 
-                  <div style={s.resultCardRow}>
-                    <div style={s.resultCardBlock}>
-                      <div style={s.resultCardLbl}>Reading</div>
-                      <div style={s.resultCardVal}>{reading || '—'}</div>
+                  {/* Readings + meaning */}
+                  {isVocab ? (
+                    <div style={s.resultCardRow}>
+                      <div style={s.resultCardBlock}>
+                        <div style={s.resultCardLbl}>Reading</div>
+                        <div style={s.resultCardVal}>{vocabReading || '—'}</div>
+                      </div>
+                      <div style={s.resultCardBlock}>
+                        <div style={s.resultCardLbl}>Meaning</div>
+                        <div style={s.resultCardVal}>{meaning || '—'}</div>
+                      </div>
                     </div>
-                    <div style={s.resultCardBlock}>
-                      <div style={s.resultCardLbl}>Meaning</div>
-                      <div style={s.resultCardVal}>{meaning || '—'}</div>
-                    </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div style={s.resultCardRow}>
+                        <div style={s.resultCardBlock}>
+                          <div style={s.resultCardLbl}>Kunyomi</div>
+                          <div style={s.resultCardVal}>{kunReadings.slice(0, 2).join('、') || '—'}</div>
+                        </div>
+                        <div style={s.resultCardBlock}>
+                          <div style={s.resultCardLbl}>Onyomi</div>
+                          <div style={s.resultCardVal}>{onReadings.slice(0, 2).join('、') || '—'}</div>
+                        </div>
+                      </div>
+                      <div style={{ ...s.resultCardBlock, marginBottom: 10, background: '#fff' }}>
+                        <div style={s.resultCardLbl}>Meaning</div>
+                        <div style={s.resultCardVal}>{meaning || '—'}</div>
+                      </div>
+                    </>
+                  )}
 
+                  {/* Correct answer if wrong */}
                   {!isCorrect && (
                     <div style={s.correctAnswerRow}>
-                      <span style={s.resultCardLbl}>Correct answer: </span>
-                      <span style={{ fontFamily: 'serif', color: '#166534', fontWeight: 600 }}>{correctAnswer}</span>
+                      <span style={{ ...s.resultCardLbl, color: '#166534' }}>Correct answer: </span>
+                      <span style={{ fontFamily: 'serif', color: '#166534', fontWeight: 600, fontSize: 14 }}>{correctAnswer}</span>
                     </div>
                   )}
 
+                  {/* Stats */}
                   <div style={s.resultStatsRow}>
                     <div style={s.resultStatCell}>
                       <span style={s.resultStatNum}>{totalReviews}</span>
@@ -430,10 +471,6 @@ export default function App({ session }) {
             })}
           </div>
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <button style={{ ...s.startBtn, flex: 1, background: "#f3f4f6", color: "#333" }} onClick={() => setPhase("menu")}>← Menu</button>
-            <button style={{ ...s.startBtn, flex: 2 }} onClick={() => startGame(drillMode)}>Again →</button>
-          </div>
         </div>
       </div>
     );
@@ -462,25 +499,22 @@ export default function App({ session }) {
         <div style={s.hudScore}>{score.toLocaleString()}</div>
         <div>{multiplier > 1 && <span style={s.multBadge}>×{multiplier.toFixed(1)}</span>}</div>
       </div>
-
       <div style={s.timerTrack}>
         <div style={{ ...s.timerBar, width: `${timerPct}%`, background: timerColor }} />
       </div>
-
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap", justifyContent: "center" }}>
         {isVocabQ && <div style={{ ...s.chip, color: "#0891b2", borderColor: "#bae6fd", background: "#e0f2fe" }}>📖 Vocab</div>}
         <div style={{ ...s.chip, color: qLabelColor, borderColor: qLabelColor + "33" }}>{qLabel}</div>
         {isHard && <div style={{ ...s.chip, color: "#dc2626", borderColor: "#fecdd3", background: "#fff1f2" }}>🔥 ×2</div>}
         {isRetry && <div style={{ ...s.chip, color: "#d97706", borderColor: "#fde68a", background: "#fffbeb" }}>🔁 Retry</div>}
       </div>
-
       <div style={{ ...s.cardWrap, transform: `translateY(${cardY}px)`, opacity: feedback === "wrong" ? 0.5 : 1 }}>
         <div style={{ ...s.card, borderColor: cardBorder, boxShadow: cardShadow, background: isHard ? "#fffafa" : "#fff" }}>
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <div style={{ ...s.levelBadge, color: getLevelColor(currentCard.level) }}>{currentCard.level}</div>
             {currentCard.progress
-              ? <div style={{ fontSize: 10, fontWeight: 700, color: '#0891b2', background: '#e0f2fe', borderRadius: 20, padding: '2px 8px', letterSpacing: '0.06em' }}>SEEN</div>
-              : <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', background: '#f3f4f6', borderRadius: 20, padding: '2px 8px', letterSpacing: '0.06em' }}>NEW</div>
+              ? <div style={{ fontSize: 10, fontWeight: 700, color: '#0891b2', background: '#e0f2fe', borderRadius: 20, padding: '2px 8px' }}>SEEN</div>
+              : <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', background: '#f3f4f6', borderRadius: 20, padding: '2px 8px' }}>NEW</div>
             }
           </div>
           <div style={{ ...s.kanjiGlyph, fontSize: isVocabQ ? 32 : 84 }}>{currentQ.prompt}</div>
@@ -491,7 +525,6 @@ export default function App({ session }) {
           {feedback === "recover" && <div style={{ fontSize: 11, color: "#d97706", marginTop: 6, fontWeight: 600 }}>+½ heart recovered</div>}
         </div>
       </div>
-
       <div style={s.choices}>
         {currentQ.choices.map((c, i) => {
           let bg = "#f9fafb", borderColor = "#e5e7eb", color = "#111";
@@ -508,7 +541,6 @@ export default function App({ session }) {
           );
         })}
       </div>
-
       <div style={s.progress}>
         {index + 1} / {deck.length}
         {streak > 1 && <span style={s.streak}> 🔥 {streak}</span>}
@@ -545,22 +577,23 @@ const s = {
   progress: { marginTop: 14, color: "#bbb", fontSize: 12 },
   streak: { color: "#f97316", fontWeight: 700 },
   // Result
-  resultWrap: { textAlign: "center", maxWidth: 440, width: "100%" },
-  resultScore: { fontSize: 56, fontWeight: 800, background: "linear-gradient(135deg, #7c3aed, #4f46e5)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", lineHeight: 1 },
-  resultLabel: { color: "#aaa", fontSize: 13, marginBottom: 16 },
-  resultStats: { display: "flex", justifyContent: "center", gap: 16, marginBottom: 20 },
+  resultWrap: { width: "100%", maxWidth: 440 },
+  resultScore: { fontSize: 52, fontWeight: 800, background: "linear-gradient(135deg, #7c3aed, #4f46e5)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", lineHeight: 1 },
+  resultLabel: { color: "#aaa", fontSize: 13, marginBottom: 12 },
+  resultStats: { display: "flex", justifyContent: "center", gap: 16, marginBottom: 16 },
   statBlock: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 },
   statNum: { fontSize: 20, fontWeight: 700, color: "#111" },
   statLbl: { fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.08em" },
-  resultList: { maxHeight: "55vh", overflowY: "auto", marginBottom: 20, display: "flex", flexDirection: "column", gap: 10 },
+  resultActions: { display: "flex", gap: 10, marginBottom: 16, position: "sticky", top: 0, background: "#fff", paddingTop: 4, paddingBottom: 8, zIndex: 10 },
+  resultList: { display: "flex", flexDirection: "column", gap: 12, paddingBottom: 20 },
   resultCard: { border: "1.5px solid", borderRadius: 16, padding: "14px", textAlign: "left" },
-  resultCardRow: { display: "flex", gap: 8, marginBottom: 10 },
-  resultCardBlock: { flex: 1, background: "#fff", borderRadius: 10, padding: "8px 10px" },
+  resultCardRow: { display: "flex", gap: 8, marginBottom: 8 },
+  resultCardBlock: { flex: 1, background: "#fff", borderRadius: 10, padding: "8px 10px", marginBottom: 0 },
   resultCardLbl: { fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 },
   resultCardVal: { fontSize: 14, fontFamily: "serif", color: "#111" },
-  correctAnswerRow: { background: "#dcfce7", borderRadius: 8, padding: "6px 10px", marginBottom: 10, fontSize: 13 },
+  correctAnswerRow: { background: "#dcfce7", borderRadius: 8, padding: "6px 10px", marginBottom: 8, fontSize: 13 },
   resultStatsRow: { display: "flex", gap: 6 },
   resultStatCell: { flex: 1, background: "#fff", borderRadius: 10, padding: "8px 6px", textAlign: "center" },
-  resultStatNum: { display: "block", fontSize: 16, fontWeight: 700, color: "#111" },
+  resultStatNum: { display: "block", fontSize: 15, fontWeight: 700, color: "#111" },
   resultStatLbl: { display: "block", fontSize: 9, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 },
 };
